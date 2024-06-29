@@ -2,6 +2,14 @@ import socket
 import threading
 import re
 import keepalive
+import argparse
+parser = argparse.ArgumentParser(
+    prog="CryptChat",
+    description="A simple chat program that uses AES encryption to encrypt messages",
+    epilog="Enjoy the program! :)"
+)
+parser.add_argument("-p", "--port", help="Port to listen on", nargs='?',type=int,action="store",const="port")
+parser.add_argument("-H", "--host", help="host to listen on",nargs='?', type=str,action="store",const="host")
 class Peer:
     def __init__(self,host,port):
         self.host = host
@@ -10,6 +18,7 @@ class Peer:
         self.announcer_host = "localhost"
         self.announcer_port = 5000
         self.connections = []
+        self.connected = []
     def start_server(self):
         server_thread = threading.Thread(target=self.server)
         server_thread.start()
@@ -31,7 +40,6 @@ class Peer:
                     data = conn.recv(1024)
                     if not data:
                         break
-                    
                     print(f"Received {data.decode()}")
                     if data.decode() == "/exit":
                         print("Disconnecting...")
@@ -54,37 +62,44 @@ class Peer:
                 s.connect((self.announcer_host,self.announcer_port))
                 s.sendall((f"{self.host}:{self.port}").encode())
                 data = s.recv(1024).decode()
-                # print("Nodes: ",data,"\n")
+                print("data: ",data)
                 threading.Thread(args=(data,),target=self.init_connect).start()
     def init_connect(self,data):
-        for i in data.split(","):
-            host_detail,name = i.split("#")
-            host,port = host_detail.split(":")
-            print("Connecting to ","test")
-            threading.Thread(target=self.connect_to_peer,args=(host,int(port))).start()
+        print("hello data: ",data)
+        if ":" in data:
+            for i in data.split(","):
+                host_detail,name = i.split("#")
+                host,port = host_detail.split(":")
+                if host == self.host and port == self.port:
+                    break
+                if i in self.connected:
+                    break
+                print("Connecting to ",name)
+                self.connected.append(i)
+                threading.Thread(target=self.connect_to_peer,args=(host,int(port))).start()
     def send_input(self):
         while True:
                 message = input("Enter Message: ")
-                # if message == "/exit":
-                #     for conn in self.connections:
-                #         print(conn.host,conn.port)
-                #         conn.close()
-                #     print("Disconnecting..")
-                #     break
+                if message == "/exit":
+                    for conn in self.connections:
+                        conn.close()
+                    print("Disconnecting..")
+                    break
                 for conn in self.connections:
-                    print(conn)
                     try:    
                         conn.sendall(message.encode())
                     except (OSError, BrokenPipeError):
                         print("Connection closed")
                         self.connections.remove(conn)
 if __name__ == "__main__":
-    sip = str(input("Server IP&Port: ")).split(':')
-    peer = Peer(sip[0], int(sip[1]))
+    args = parser.parse_args()
+    if args.port and args.host :
+        peer = Peer(args.host, args.port)
+    else:
+        sip = str(input("Server IP&Port: ")).split(':')
+        peer = Peer(sip[0], int(sip[1]))
     peer.start_server()
-    # cip = str(input("Client IP&Port")).split(':')
     cip = ["localhost","5000"]
-    # Example of connecting to another peer
     threading.Thread(target=peer.get_peers).start()
     threading.Thread(target=peer.connect_to_peer, args=(cip[0], int(cip[1]))).start()
     threading.Thread(target=peer.send_input).start()

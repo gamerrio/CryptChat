@@ -1,41 +1,49 @@
 import socket
 import threading
-usr_list = 'localhost:5002#Name'
-
-def handle_client(client_socket):
-    global usr_list
-    while True:
-        try:
-            data = client_socket.recv(1024)
-            if not data:
+import keepalive
+class Server:
+    def __init__(self):
+        self.clients =[]
+        self.usr_list = ''
+    def handle_client(self,client_socket):
+        while True:
+            try:
+                data = client_socket.recv(1024)
+                if not data:
+                    break
+                print(f"Received: {data.decode()}")
+                if ":" in str(data.decode()):
+                    self.on_join(data)
+                    client_socket.sendall(self.usr_list.encode())
+            except ConnectionResetError:
                 break
-            print(f"Received: {data.decode()}")
-            if ":" in str(data.decode()):
+        client_socket.close()
+
+
+    def on_join(self,data):
+            for i in self.clients:
                 host, port = data.decode().split(":")
-                # usr_list = usr_list + f",{host}:{port}#name"
-                client_socket.sendall(usr_list.encode("utf-8"))
-            client_socket.sendall(data)
-        except ConnectionResetError:
-            break
-    client_socket.close()
+                if self.usr_list == '':
+                    self.usr_list = self.usr_list + f"{host}:{port}#name"
+                else:
+                    self.usr_list = self.usr_list + f",{host}:{port}#name"
+                i.sendall(self.usr_list.encode())
+            
 
+    def start_server(self,host='0.0.0.0', port=5000):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((host, port))
+        server.listen(5)
+        print(f"Server listening on {host}:{port}")
 
-def on_join(sock):
-    sock.sendall(usr_list.encode())
-    usr_list.append()
-
-
-def start_server(host='0.0.0.0', port=5000):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen(5)
-    print(f"Server listening on {host}:{port}")
-
-    while True:
-        client_socket, addr = server.accept()
-        print(f"Accepted connection from {addr}")
-        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
-        client_handler.start()
+        while True:
+            client_socket, addr = server.accept()
+            keepalive.set(client_socket,after_idle_sec=60, interval_sec=60, max_fails=5)
+            self.clients.append(client_socket)
+            print(f"Accepted connection from {addr}")
+            client_handler = threading.Thread(target=self.handle_client, args=(client_socket,))
+            client_handler.start()
 
 if __name__ == "__main__":
-    start_server()
+    Server().start_server()
